@@ -1,0 +1,378 @@
+\documentclass[12pt]{article}
+
+\title{CS-131:Hw5 Fun with Sorting}
+\author{Matthew McLaughlin}
+\date{\today}
+
+
+\setlength{\topmargin}{0.0in}
+\setlength{\headheight}{0.0in}
+\setlength{\headsep}{0.0in}
+\setlength{\textheight}{9.0in}
+\setlength{\oddsidemargin}{0in}
+\setlength{\textwidth}{6.5in}
+
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumerate}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{listings}
+%\usepackage{algorithm} 
+%\usepackage{algorithmicx} 
+%\usepackage{algpseudocode}
+\usepackage[ruled,vlined]{algorithm2e}
+\hypersetup{colorlinks=true,urlcolor=blue}
+\lstset{
+	frame=single,
+	language=c,
+	numbers=left,
+}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+
+\subsubsection*{Assumptions And Notation}
+I use one based indexing. $S$ is the input sequence
+$S_{i,j}$ is the subsequence $S_i, \dots S_j$.
+$P_i$ denotes the $i$th proccessor in the network.
+$P_{i,j}$ is the $j$th value stored in proccessor $i$.
+If $T$ is a list of values the $T \Leftarrow x$ adds $x$ to the end
+of list $T$.
+Let $M$ be the name of the network. 
+
+\newpage
+
+\section{Shear Sort}
+For this problem I am assuming that sequence $S$ is of 
+length $\sqrt{n} = k$ where $k$ is positive integer
+representing the number of proccessors. 
+This will make it possible to treat the sequence
+like a square matrix by dividing the sequence into rows and assigning each proccessor to
+a row. The assumption that $k$ is a factor of $n$ serves to simply the 
+pseudocode and analysis. However, it does not affect the complexity of the problem. 
+That is to say, with the assumption that $n$ is a square number and $n$ is divisible by $k$,
+we could still in effect treat the sequence as a square matrix as before when $k*k = n$, yet
+now we would need to simulate this with the procecssors we had avaiable. For example,
+suppose $n=16$ and $k=2$. In this case we could have $P_1$ divide its portion of the 
+sequence in half so that the first 4 values and last 4 are treated as two different subsequences
+allowing $P_1$ to simulate the effect of having an extra proccessor.   
+
+\subsection{Implementation}
+Below I outline the procedure \textit{Parallel-shear-sort} for preforming shear sort
+on sequence $S$. This procedure uses helper functions described below.
+We are required to use a comparison exchange sorting algorithm. Assume
+that the subroutine $\textit{sort}$ used by \textit{Parallel-shear-sort}
+is mergesort and that it takes an additional argument specifying wether to sort
+in increasing order or decreasing order \\
+ 
+\begin{algorithm}[]
+	\SetAlgoRefName{is-even}:
+	\caption{outputs true if the agument $n$ is even}
+	\SetAlgoLined
+	\DontPrintSemicolon
+	\KwIn{$n$ an integer}
+	\KwResult{true if $n$ is even false otherwise}
+	\textbf{return} $n$ mod $2 = 0$
+\end{algorithm}
+
+\begin{algorithm}[]
+	\SetAlgoRefName{Distribute-sequence}:
+	\caption{Stores a subsequence of $S$ in the proccessors}
+	\SetAlgoLined
+	\DontPrintSemicolon
+	\LinesNumbered 
+	\KwIn{A network of a collection of proccessor $P_1 \dots P_{k}$, Sequence $S$, $n$ is number of values in $S$}
+	\KwResult{Each proccessor has a portion of $S$ in its memory.
+	$P_{i}$ stores the subsequence $S_{a,b}$ where 
+	$a=(i-1)(\sqrt{n}) + 1$ and $b= (i)\sqrt{n}$. Thus, the routine effectively
+	transforms $S$ into a square matrix and distribute it amongst the 
+	proccessors so that $P_i$ stores the $i$th row of the matrix}
+	$i \leftarrow 1$ \;
+	$s \leftarrow \sqrt{n}$ \;
+	\While{$i \leq s$}{
+		$a \leftarrow (i-1)s + 1$ \;
+		$b \leftarrow i \cdot s$ \;
+		$P_{i} \leftarrow S_{a,b}$ \;
+		$i \leftarrow i + 1$
+	}
+\end{algorithm}
+
+
+\begin{algorithm}[]
+	\SetAlgoRefName{Transpose}:
+	\SetAlgoLined
+	\DontPrintSemicolon
+	\LinesNumbered 
+	\caption{Simulates a matrix transpose on the network}
+	\KwIn{A network of a collection of proccessor $P_1 \dots P_{k}$, $m$ is the number
+	of values that each proccessor keeps in memory ($m=sqrt{n}$ (see \textit{Parallel-shear-sort})}
+	\KwResult{If we think of $M$ as a matrix where each proccessor
+	$P_i$ in $M$ stores the $i$th row in $M$ then after this routine
+	returns each $P_i$ will store the $i$th column of $M$}
+	\ForEach{$P_i \in M$}{
+		\For{$j \leftarrow 1$ to $m$}{
+			\If{$j \neq i$}{
+				$P_{j,i} \leftarrow P_{i,j}$
+			}
+		}
+	}
+\end{algorithm}
+The crucial part of the \textit{Transpose} routine is line 4 where
+the $i$th proccessor sends it's $i$th row to all of the other 
+proccessors. The effect is that the old entry $i$th entry in $P_j$ is 
+overwritten with $P_{i,i}$
+
+
+\begin{algorithm}[]
+	\SetAlgoRefName{Output-sequence}:
+	\SetAlgoLined
+	\DontPrintSemicolon
+	\LinesNumbered 
+	\caption{Output the sequence obtained by
+	scanning over the network using snake like indices}
+	\KwIn{A network of a collection of proccessor $P_1 \dots P_{k}$, $m$ is the number
+	of values that each proccessor keeps in memory ($m=sqrt{n}$ see \textit{Parallel-shear-sort})}
+	\KwOut{Produces a sequence $T$ from $M$ according to the following rules. If $i$ is even then
+	scan $P_i$ from left to right otherwise scan from
+	right to left}
+	\ForEach{$P_i \in M$}{
+		$T \leftarrow $ empty-list()
+		\uIf{is-even(i)}{
+			\For{$j \leftarrow 1$ to $m$}{
+				$T \Leftarrow P_{i,j}$ \;
+			}
+		}
+		\uElse{
+			\For{$j \leftarrow m$ down-to $1$}{
+				$T \Leftarrow P_{i,j}$ \;
+			}
+		}
+	}
+\end{algorithm}
+
+\begin{algorithm}[]
+	\SetAlgoRefName{Parallel-sort}:
+	\SetAlgoLined
+	\DontPrintSemicolon
+	\LinesNumbered 
+	\caption{Produces a sorted version of $S$}
+	\KwIn{A network of a collection of proccessor $P_1 \dots P_{k}$, Sequence $S$,
+	$n$ is the number of values in $S$}
+	Distribute-sequence($M$,$S$,$n$) \;
+	$cycle\_num \leftarrow 0$ \;
+	$m \leftarrow \sqrt{n}$ \;
+	$max\_cycles \leftarrow \log(m)$ \;
+	\While{$cycle\_num \leq max\_cycles$}{
+		\uIf{is-even($cycle\_num$)}{
+			\ForEach{$P_i \in M$}{
+				\uIf{is-even(i)}{
+					sort($P_i$,\textit{increasing})\;
+				}
+				\uElse{
+					sort($P_i$,\textit{decreasing})\;
+				}
+			}
+		}
+		\uElse{
+			Transpose($M$,$m$)\;
+			sort($P_i$,\textit{increasing})\;
+			Transpose($M$,$m$)\;
+		}
+		$cycle\_num \leftarrow cycle\_num + 1$\;
+	}
+	Output-sequence($M$,$m$)\;
+\end{algorithm}
+\newpage
+
+\subsection{Analysis}
+\subsubsection{Amount of compare exchange operations performed by each proccessor} \label{exchange}
+Recall that we use merge sort to preform compare exchange operations.
+Thus, the total number of comparisons performed between all the proccessors 
+in a given cycle is $O(n \log n)$. We know by the theorem stated in the slides that the number of
+iterations until \textit{Parallel-shear-sort} converges is at most 
+$O(\log\sqrt{n}) = O(\frac1{2}\log(n))$. 
+This means the total number of compare exchange operations 
+performed over \textit{all} cycles is at most \\
+$(\frac1{2}\log n)(n \log n) = \frac{n}{2}\log^2(n)$
+
+\subsubsection{Amount of memory needed by each proccessor}
+Each proccessor needs to be able to store $\sqrt{n}$ items. In total $O(n)$ storage
+is needed.
+
+\subsubsection{Number of Cross-Bar communications cycles }
+The only time communications between proccessors takes place is during the transpose
+phase of \textit{Parallel-shear-sort} in lines $13,15$. This means only $\frac1{2}$
+the time (during an odd cycle) communications will take place. \\ 
+
+\noindent
+Tranpose is invoked twice in the else block. Each inovations requires $n$ communications 
+which mean there will be $2n$ during an odd cycle. \\
+
+\noindent
+In \ref{exchange} we showed that there are no more than $\frac1{2}\log n$
+cycles.  \\
+
+\noindent
+Putting all these ideas together, we see the total number of cross bar communications performed by
+the algorithm is $\ldots$ 
+$$(\frac1{2})(2n)(\frac1{2}\log n) = \frac{n \log n}{2}$$
+
+which is $O(n \log n)$
+\newpage
+
+\section{Bitonic Sort}
+I assume the $n=2^j$ for some positive integer $j$ and that $n$ is divisible by $k$, the number of proccessor
+I assume the existence of two function, \textit{send} and \textit{read} responsible for communication
+between proccessors on the network. These functions are not defined 
+explicitally but the headers are given. Also, note that \textit{Compare-exchange} is defined to work
+when communication is between two different proccessors or just within the same proccesor.
+\textit{Output-sequence} here simply scans over each proccessors memory starting at lower index
+proccesors and going up outputing the contents of there memory. Since it is such a simple function
+I have not included it.
+Lastly, I assume that the input sequence $S$ is a bitonic sequence where the first half of the sequence 
+is nondecreasing and the second half nonincreasing. This assumption was permitted by the instructor. 
+Futhermore, even if it wasnt, it wouldnt be very hard to trasnform an arbitrary sequence so that 
+it was bitonic
+
+\subsection{Implementation}
+\begin{algorithm}[]
+	\SetAlgoRefName{send}
+	\SetAlgoLined
+	\DontPrintSemicolon
+	\LinesNumbered 
+	\caption{Sends data from one proccessor to another}
+	\KwIn{The sending procceesor $P_i$, the element to be sent $x$, the receiving proccesor $P_j$}
+	\KwResult{Element $x$ is sent from $P_i$ to $P_j$. Whatever is in $P_j$ read buffer is automatically
+	overwritten with $x$}
+\end{algorithm}
+
+\begin{algorithm}[]
+	\SetAlgoRefName{read}
+	\SetAlgoLined
+	\DontPrintSemicolon
+	\LinesNumbered 
+	\caption{procceesor $P_i$ reads its read buffer and returns whatever value is in there.}
+	\KwIn{The proccessor whose read buffer is to be read}
+	\KwResult{The value inside of $P_i$ read buffer. There is only a valid value here if 
+	something was sent to $P_i$ from another proccessor. Otherwise the buffer is garbage}
+\end{algorithm}
+
+\begin{algorithm}[]
+	\SetAlgoRefName{Distribute-sequence}
+	\caption{Stores a subsequence of $S$ in the proccessors}
+	\SetAlgoLined
+	\DontPrintSemicolon
+	\LinesNumbered 
+	\KwIn{A network of a collection of proccessor $P_1 \dots P_{k}$, Sequence $S$, $n$ is number of values in $S$,
+	$k$ is the number of proccessors}
+	\KwResult{Calculates how many values to load into each proccessor based on $n$ then reads that many consecutive
+	values into the correct processor}
+	$i \leftarrow 1 $ \;
+	$s \leftarrow \frac{n}{k}$ \;
+	\While{$i \leq k$}{
+		$a \leftarrow (i-1)(s) + 1$ \;
+		$b \leftarrow i \cdot s$ \;
+		$P_i \leftarrow S_{a,b}$ \;
+		$i \leftarrow i + 1$ \;
+	}
+\end{algorithm}
+
+
+\begin{algorithm}[]
+	\SetAlgoRefName{Compare-exchange}
+	\caption{Compares the elements between two processors and swaps them if the first proccessors 
+	element is greater than the seconds}
+	\SetAlgoLined
+	\DontPrintSemicolon
+	\LinesNumbered 
+	\KwIn{A proccessor $P_i$, the index of the element for comparision in $P_i$ called $a$, 
+		A second proccessor $P_j$, the index of the element for comparison in $P_j$ called $b$}
+	\KwResult{We assume that $P_i$ should store smaller values and $P_j$ larger. Thus, $P_i$ and $P_j$
+	send eachother values (if they are different proccesors) and $P_i$ keeps the minimum of the two values
+	whereas $P_j$ keeps the maximum of the two}
+
+	\uIf{$i \neq j$}{
+		send($P_i,P_{i,a},P_j$) \;
+		send($P_j,P_{j,b},P_i$)	\;
+		$x \leftarrow $ read($P_i$) \;
+		$P_{i,a} \leftarrow $ min($P_{i,a},x$)\;
+		$x \leftarrow $ read($P_j$) \;
+		$P_{j,b} \leftarrow $ min($P_{j,b},x$)\;
+	}
+	\uElse{
+		$x \leftarrow P_{i,a}$\;
+		\If{$x > P_{i,b}$}{
+			$P_{i,a} \leftarrow P_{i,b}$\;
+			$P_{i,b} \leftarrow x $ \;
+		}
+	}
+\end{algorithm}
+
+\begin{algorithm}[]
+	\SetAlgoRefName{Single-proccessor-bitonic-sort}:
+	\caption{Given a proccessor $P$ whose memory stores a bitoncic sequence.}
+	\SetAlgoLined
+	\DontPrintSemicolon
+	\LinesNumbered 
+	\KwIn{A single proccessor from the network $P_i$, $n$ number of proccessors in network that $P_i$ is from, $k$ number proccessor in network
+	that $P_i$ is from}
+
+	$\textit{list\_size} \leftarrow \frac{n}{k}$ \;
+	$j \leftarrow 1$\;
+	$\textit{offset} \leftarrow \textit{list\_size} \cdot 2^{-j}$\;
+	\While{\textit{offset} $\geq 1$}{
+		\For{$i = 1 $ to $(\textit{list\_size} \cdot 2^{-1})$}{
+			Compare-exchange($P_i$, $i$, $P_i$, $i + \textit{offset}$)
+		}
+	}
+\end{algorithm}
+
+\begin{algorithm}[]
+	\SetAlgoRefName{Parallel-bitonic-sort}:
+	\caption{Produces a sorted sequence given a bitonic sequence $S$ where the first half of $S$ is nondecreasing 
+	and the second half is nonincreasing}
+	\SetAlgoLined
+	\DontPrintSemicolon
+	\LinesNumbered 
+	\KwIn{A network of a collection of proccessor $P_1 \dots P_{k}$, Bitonic sequence $S$, $n$ is number of values in $S$,
+	$k$ is the number of proccessors}
+	Distribute-sequence($M$,$S$,$n$,$k$) \;
+	$\textit{list\_size} \leftarrow \frac{n}{k}$ \;
+	$j \leftarrow 1$\;
+	$\textit{offset} \leftarrow \textit{list\_size} \cdot 2^{-j}$\;
+	\While{\textit{offset} $\geq 1$}{
+		\For{$i=1$ to $\frac{k}{2}$}{
+			\For{$c = 1 $ to $(\textit{list\_size} \cdot 2^{-1})$}{
+				$a \leftarrow i$ \;
+				$b \leftarrow i + \textit{offset}$ \;
+				Compare-exchange($P_a$, $c$, $P_b$, $c$)
+			}
+		}
+	}
+	\ForEach{$P_i$}{
+		Single-procceesor-bitoncic-sort($P_i$)\;
+	}
+	Output-sequence($M$)\;
+
+\end{algorithm}
+\newpage 
+
+\subsection{Analysis}
+\subsubsection{Amount of compare exchange operations performed by each proccessor} \label{op}
+There will be $\frac{n}{4}\log n $ iterations for the while loop in \textit{parallel-bitonic-sort}.
+\textit{Single-proccesor-bitonic-sort} is called once for each proccessor after the while loop.
+There are $n \log n$ total comparisons as a result of this function. 
+Thus in total there are  $O(n \log n )$ communications amongst proccessors.
+
+\subsubsection{Amount of memory needed by each proccessor}
+A given proccessor will need to store $\frac{n}{k}$ elements. In total of course the storage is
+$O(n)$
+
+\subsubsection{Number of Cross-Bar communications cycles }
+In this case the analaysis of the cross bar communication is idnetical to \ref{op}
+thus there are $O(n \log n) $ cross bar communications cycles
+
+\end{document}
